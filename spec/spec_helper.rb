@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require "flaky"
+require "flaky-friend"
 
 RSpec.configure do |config|
   config.expect_with :rspec do |expectations|
