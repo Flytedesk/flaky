@@ -1,0 +1,78 @@
+# frozen_string_literal: true
+
+require "json"
+require_relative "base"
+
+module Flaky
+  module Providers
+    class GithubActions < Base
+      def fetch_workflows(age: "24h")
+        hours = parse_age_to_hours(age)
+        cutoff = Time.now - (hours * 3600)
+
+        output = run_cmd("gh run list --branch #{config.branch} --limit 100 --json databaseId,conclusion,createdAt,headBranch,workflowName")
+        runs = JSON.parse(output)
+
+        runs.filter_map do |run|
+          created = Time.parse(run["createdAt"])
+          next if created < cutoff
+
+          {
+            id: run["databaseId"].to_s,
+            pipeline_id: run["databaseId"].to_s,
+            branch: run["headBranch"],
+            result: map_conclusion(run["conclusion"]),
+            created_at: run["createdAt"]
+          }
+        end
+      end
+
+      def fetch_jobs(pipeline_id:)
+        output = run_cmd("gh run view #{pipeline_id} --json jobs")
+        data = JSON.parse(output)
+
+        (data["jobs"] || []).filter_map do |job|
+          name = job["name"]
+          next unless name.match?(/test/i)
+
+          {
+            id: job["databaseId"].to_s,
+            name: name,
+            block_name: name,
+            result: map_conclusion(job["conclusion"])
+          }
+        end
+      end
+
+      def fetch_log(job_id:)
+        run_cmd("gh run view --job #{job_id} --log")
+      end
+
+      private
+
+      def run_cmd(cmd)
+        output = `#{cmd} 2>/dev/null`
+        raise Error, "Command failed (exit #{$?.exitstatus}): #{cmd}" unless $?.success?
+        output
+      end
+
+      def parse_age_to_hours(age)
+        case age
+        when /(\d+)h/ then $1.to_i
+        when /(\d+)d/ then $1.to_i * 24
+        else 24
+        end
+      end
+
+      def map_conclusion(conclusion)
+        case conclusion
+        when "success" then "passed"
+        when "failure" then "failed"
+        else conclusion || "unknown"
+        end
+      end
+    end
+
+    Configuration.register_provider(:github_actions, GithubActions)
+  end
+end
