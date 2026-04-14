@@ -3,7 +3,7 @@
 require_relative "lib/flaky/version"
 
 Gem::Specification.new do |spec|
-  spec.name = "flaky"
+  spec.name = "flaky-friend"
   spec.version = Flaky::VERSION
   spec.authors = ["Flytedesk"]
   spec.summary = "Track, rank, and reproduce flaky CI test failures"
