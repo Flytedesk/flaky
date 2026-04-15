@@ -36,6 +36,7 @@ module Flaky
             puts "\n  \e[33m▶ Next to investigate:\e[0m #{location}"
             puts "    #{row['description']}"
             puts "    Seeds: #{row['seeds']}"
+            puts "    Commits: #{row['commit_shas']}" if row["commit_shas"]
             puts ""
           end
         end

@@ -60,7 +60,8 @@ module Flaky
 
         @repo.insert_ci_run(
           workflow_id: wf[:id], pipeline_id: wf[:pipeline_id],
-          branch: wf[:branch], result: pipeline_result, created_at: wf[:created_at]
+          branch: wf[:branch], result: pipeline_result, created_at: wf[:created_at],
+          commit_sha: wf[:commit_sha]
         )
 
         puts "#{jobs.length} test jobs (#{pipeline_result})"

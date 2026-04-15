@@ -33,6 +33,7 @@ module Flaky
               id: wf["wf_id"],
               pipeline_id: wf["initial_ppl_id"],
               branch: wf["branch_name"],
+              commit_sha: wf["commit_sha"],
               created_at: created_at.strftime("%Y-%m-%d %H:%M:%S")
             }
           end

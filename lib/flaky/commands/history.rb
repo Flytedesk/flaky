@@ -22,11 +22,12 @@ module Flaky
         first = rows.first
         puts "Failure history for #{first['spec_file']}:#{first['line_number']}"
         puts "  #{first['description']}\n\n"
-        puts format("%-20s %-8s %-30s %s", "Date", "Seed", "Job", "Workflow")
-        puts "-" * 100
+        puts format("%-20s %-8s %-10s %-30s %s", "Date", "Seed", "Commit", "Job", "Workflow")
+        puts "-" * 110
 
         rows.each do |row|
-          puts format("%-20s %-8d %-30s %s", row["failed_at"], row["seed"], row["job_name"], row["workflow_id"])
+          sha = row["commit_sha"] ? row["commit_sha"][0..6] : "       "
+          puts format("%-20s %-8d %-10s %-30s %s", row["failed_at"], row["seed"], sha, row["job_name"], row["workflow_id"])
         end
 
         puts "\nTotal failures: #{rows.length}"

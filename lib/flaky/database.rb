@@ -4,7 +4,7 @@ require "sqlite3"
 
 module Flaky
   class Database
-    SCHEMA_VERSION = 1
+    SCHEMA_VERSION = 2
 
     def initialize(path = nil)
       @path = path || Flaky.configuration.resolved_db_path
@@ -87,8 +87,13 @@ module Flaky
           CREATE INDEX IF NOT EXISTS idx_ci_runs_branch ON ci_runs(branch);
           CREATE INDEX IF NOT EXISTS idx_job_results_workflow ON job_results(workflow_id);
 
-          PRAGMA user_version = 1;
+          PRAGMA user_version = 2;
         SQL
+      end
+
+      if version < 2
+        db.execute("ALTER TABLE ci_runs ADD COLUMN commit_sha TEXT")
+        db.execute("PRAGMA user_version = 2")
       end
     end
   end

@@ -10,7 +10,7 @@ module Flaky
       def fetch_workflows(age: "24h")
         cutoff = Time.now - AgeParser.to_seconds(age)
 
-        output = run_cmd("gh run list --branch #{config.branch} --limit 100 --json databaseId,conclusion,createdAt,headBranch,workflowName")
+        output = run_cmd("gh run list --branch #{config.branch} --limit 100 --json databaseId,conclusion,createdAt,headBranch,headSha,workflowName")
         runs = JSON.parse(output)
 
         runs.filter_map do |run|
@@ -21,6 +21,7 @@ module Flaky
             id: run["databaseId"].to_s,
             pipeline_id: run["databaseId"].to_s,
             branch: run["headBranch"],
+            commit_sha: run["headSha"],
             result: map_conclusion(run["conclusion"]),
             created_at: run["createdAt"]
           }

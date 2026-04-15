@@ -18,10 +18,10 @@ module Flaky
       !!connection.get_first_value("SELECT 1 FROM ci_runs WHERE workflow_id = ?", workflow_id)
     end
 
-    def insert_ci_run(workflow_id:, pipeline_id:, branch:, result:, created_at:)
+    def insert_ci_run(workflow_id:, pipeline_id:, branch:, result:, created_at:, commit_sha: nil)
       connection.execute(
-        "INSERT INTO ci_runs (workflow_id, pipeline_id, branch, result, created_at) VALUES (?, ?, ?, ?, ?)",
-        [workflow_id, pipeline_id, branch, result, created_at]
+        "INSERT INTO ci_runs (workflow_id, pipeline_id, branch, result, created_at, commit_sha) VALUES (?, ?, ?, ?, ?, ?)",
+        [workflow_id, pipeline_id, branch, result, created_at, commit_sha]
       )
     end
 
@@ -53,7 +53,8 @@ module Flaky
           tf.description,
           COUNT(*) as failure_count,
           MAX(tf.failed_at) as last_failure,
-          GROUP_CONCAT(DISTINCT tf.seed) as seeds
+          GROUP_CONCAT(DISTINCT tf.seed) as seeds,
+          GROUP_CONCAT(DISTINCT cr.commit_sha) as commit_shas
         FROM test_failures tf
         JOIN ci_runs cr ON cr.workflow_id = tf.workflow_id
         WHERE cr.branch = ?
@@ -91,7 +92,8 @@ module Flaky
           tf.job_name,
           tf.branch,
           tf.failed_at,
-          cr.workflow_id
+          cr.workflow_id,
+          cr.commit_sha
         FROM test_failures tf
         JOIN ci_runs cr ON cr.workflow_id = tf.workflow_id
         WHERE #{conditions.join(" AND ")}
