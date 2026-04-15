@@ -2,13 +2,13 @@
 
 require "json"
 require_relative "base"
+require_relative "../age_parser"
 
 module Flaky
   module Providers
     class GithubActions < Base
       def fetch_workflows(age: "24h")
-        hours = parse_age_to_hours(age)
-        cutoff = Time.now - (hours * 3600)
+        cutoff = Time.now - AgeParser.to_seconds(age)
 
         output = run_cmd("gh run list --branch #{config.branch} --limit 100 --json databaseId,conclusion,createdAt,headBranch,workflowName")
         runs = JSON.parse(output)
@@ -54,14 +54,6 @@ module Flaky
         output = `#{cmd} 2>/dev/null`
         raise Error, "Command failed (exit #{$?.exitstatus}): #{cmd}" unless $?.success?
         output
-      end
-
-      def parse_age_to_hours(age)
-        case age
-        when /(\d+)h/ then $1.to_i
-        when /(\d+)d/ then $1.to_i * 24
-        else 24
-        end
       end
 
       def map_conclusion(conclusion)

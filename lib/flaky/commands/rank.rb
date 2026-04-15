@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require_relative "../database"
+require_relative "../repository"
 
 module Flaky
   module Commands
@@ -8,39 +8,20 @@ module Flaky
       def initialize(since_days: 30, min_failures: 1)
         @since_days = since_days
         @min_failures = min_failures
-        @db = Database.new
+        @repo = Repository.new
       end
 
       def execute
-        conn = @db.connection
         branch = Flaky.configuration.branch
 
-        rows = conn.execute(<<~SQL, [branch, "-#{@since_days} days", @min_failures])
-          SELECT
-            tf.spec_file,
-            tf.line_number,
-            tf.description,
-            COUNT(*) as failure_count,
-            MAX(tf.failed_at) as last_failure,
-            GROUP_CONCAT(DISTINCT tf.seed) as seeds
-          FROM test_failures tf
-          JOIN ci_runs cr ON cr.workflow_id = tf.workflow_id
-          WHERE cr.branch = ?
-            AND cr.created_at >= datetime('now', ?)
-          GROUP BY tf.spec_file, tf.line_number
-          HAVING COUNT(*) >= ?
-          ORDER BY failure_count DESC, last_failure DESC
-        SQL
+        rows = @repo.rank_failures(branch: branch, since_days: @since_days, min_failures: @min_failures)
 
         if rows.empty?
           puts "No flaky tests found in the last #{@since_days} days."
           return
         end
 
-        total_runs = conn.get_first_value(
-          "SELECT COUNT(DISTINCT workflow_id) FROM ci_runs WHERE branch = ? AND created_at >= datetime('now', ?)",
-          [branch, "-#{@since_days} days"]
-        ).to_i
+        total_runs = @repo.total_runs_count(branch: branch, since_days: @since_days)
 
         puts "Flaky tests on #{branch} (last #{@since_days} days, #{total_runs} CI runs):\n\n"
         puts format("%-6s %-50s %s", "Fails", "Location", "Last Failure")
@@ -59,7 +40,7 @@ module Flaky
           end
         end
       ensure
-        @db.close
+        @repo.close
       end
     end
   end

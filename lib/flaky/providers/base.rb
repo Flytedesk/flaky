@@ -10,7 +10,7 @@ module Flaky
       end
 
       # Returns Array of Hashes:
-      #   { id:, pipeline_id:, branch:, result:, created_at: }
+      #   { id:, pipeline_id:, branch:, created_at: }
       def fetch_workflows(age: "24h")
         raise NotImplementedError
       end

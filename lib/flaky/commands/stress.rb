@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require_relative "../database"
+require_relative "../repository"
 
 module Flaky
   module Commands
@@ -11,7 +11,7 @@ module Flaky
         @seed = seed
         @ci_simulate = ci_simulate
         @timeout = timeout
-        @db = Database.new
+        @repo = Repository.new
       end
 
       def execute
@@ -67,16 +67,14 @@ module Flaky
           puts "  FLAKY_CI_SIMULATE=#{@ci_simulate ? '1' : '0'} bundle exec rspec #{@spec_location} --seed #{failed_seeds.first}"
         end
 
-        # Record to database
-        conn = @db.connection
-        conn.execute(
-          "INSERT INTO stress_runs (spec_location, seed, iterations, passes, failures, ci_simulation) VALUES (?, ?, ?, ?, ?, ?)",
-          [@spec_location, @seed, @iterations, passes, failures, @ci_simulate ? 1 : 0]
+        @repo.insert_stress_run(
+          spec_location: @spec_location, seed: @seed, iterations: @iterations,
+          passes: passes, failures: failures, ci_simulation: @ci_simulate ? 1 : 0
         )
 
         exit(failures > 0 ? 1 : 0)
       ensure
-        @db.close
+        @repo.close
       end
     end
   end

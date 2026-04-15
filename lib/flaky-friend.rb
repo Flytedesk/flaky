@@ -2,6 +2,7 @@
 
 require_relative "flaky/version"
 require_relative "flaky/configuration"
+require_relative "flaky/age_parser"
 require_relative "flaky/providers/semaphore"
 require_relative "flaky/providers/github_actions"
 require_relative "flaky/railtie" if defined?(Rails::Railtie)

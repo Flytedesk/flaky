@@ -5,14 +5,13 @@ require "net/http"
 require "uri"
 require "yaml"
 require_relative "base"
+require_relative "../age_parser"
 
 module Flaky
   module Providers
     class Semaphore < Base
-      TEST_BLOCKS = ["Unit Tests", "System Tests"].freeze
-
       def fetch_workflows(age: "24h")
-        cutoff = Time.now - parse_age_seconds(age)
+        cutoff = Time.now - AgeParser.to_seconds(age)
         project_id = resolve_project_id
         branch = config.branch
         workflows = []
@@ -51,10 +50,11 @@ module Flaky
       def fetch_jobs(pipeline_id:)
         data = api_get("pipelines/#{pipeline_id}", detailed: true)
         blocks = data["blocks"] || []
+        test_blocks = config.test_blocks
 
         blocks.flat_map do |block|
           block_name = block["name"]
-          next [] unless TEST_BLOCKS.include?(block_name)
+          next [] unless test_blocks.include?(block_name)
 
           (block["jobs"] || []).map do |job|
             {
@@ -94,22 +94,41 @@ module Flaky
         raise Error, "Semaphore API error (#{response.code}): #{response.body[0..200]}" unless response.is_a?(Net::HTTPSuccess)
 
         JSON.parse(response.body)
+      rescue Net::OpenTimeout, Net::ReadTimeout => e
+        raise Error, "Semaphore API timeout: #{e.message}"
+      rescue SocketError => e
+        raise Error, "Cannot reach Semaphore API: #{e.message}"
+      rescue Errno::ECONNREFUSED => e
+        raise Error, "Connection refused to Semaphore API: #{e.message}"
+      rescue JSON::ParserError => e
+        raise Error, "Invalid JSON from Semaphore API: #{e.message}"
+      end
+
+      def sem_config
+        @sem_config ||= begin
+          path = File.expand_path("~/.sem.yaml")
+          unless File.exist?(path)
+            raise Error, "Semaphore config not found at #{path}. Run `sem connect` to authenticate."
+          end
+          YAML.safe_load_file(path)
+        end
       end
 
       def api_host
         @api_host ||= begin
-          sem_config = YAML.load_file(File.expand_path("~/.sem.yaml"))
           context_name = sem_config["active-context"]
           host = sem_config.dig("contexts", context_name, "host")
+          raise Error, "No host found in ~/.sem.yaml for context '#{context_name}'" unless host
           "https://#{host}"
         end
       end
 
       def api_token
         @api_token ||= begin
-          sem_config = YAML.load_file(File.expand_path("~/.sem.yaml"))
           context_name = sem_config["active-context"]
-          sem_config.dig("contexts", context_name, "auth", "token")
+          token = sem_config.dig("contexts", context_name, "auth", "token")
+          raise Error, "No auth token found in ~/.sem.yaml for context '#{context_name}'" unless token
+          token
         end
       end
 
@@ -119,15 +138,6 @@ module Flaky
           project = projects.find { |p| p.dig("metadata", "name") == config.project }
           raise Error, "Project '#{config.project}' not found in Semaphore" unless project
           project.dig("metadata", "id")
-        end
-      end
-
-      def parse_age_seconds(age)
-        case age.to_s
-        when /\A(\d+)h\z/ then $1.to_i * 3600
-        when /\A(\d+)d\z/ then $1.to_i * 86400
-        when /\A(\d+)m\z/ then $1.to_i * 60
-        else 86400 # default 24h
         end
       end
     end
