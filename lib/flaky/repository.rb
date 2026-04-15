@@ -159,7 +159,7 @@ module Flaky
       end
 
       connection.execute(
-        "SELECT DISTINCT seed FROM test_failures WHERE #{conditions.join(' AND ')} ORDER BY failed_at DESC",
+        "SELECT seed, COUNT(*) AS n FROM test_failures WHERE #{conditions.join(' AND ')} GROUP BY seed ORDER BY n DESC, MAX(failed_at) DESC",
         params
       ).map { |row| row["seed"] }
     end

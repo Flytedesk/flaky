@@ -18,14 +18,14 @@ module Flaky
         env = {}
         env["FLAKY_CI_SIMULATE"] = "1" if @ci_simulate
 
-        seeds = resolve_seeds
+        seed = resolve_seed
         passes = 0
         failures = 0
-        failed_seeds = []
+        failed_seeds = Set.new
         start_time = Time.now
 
         puts "Stress testing: #{@spec_location}"
-        puts "  Iterations: #{@iterations}, Seeds: #{seed_description(seeds)}, CI simulation: #{@ci_simulate}"
+        puts "  Iterations: #{@iterations}, Seed: #{seed_description(seed)}, CI simulation: #{@ci_simulate}"
         puts ""
 
         @iterations.times do |i|
@@ -35,7 +35,7 @@ module Flaky
             break
           end
 
-          run_seed = seeds ? seeds[i % seeds.length] : rand(100_000)
+          run_seed = seed.presence || rand(100_000)
           cmd = "bundle exec rspec #{@spec_location} --seed #{run_seed} --format progress 2>&1"
 
           output = nil
@@ -51,7 +51,7 @@ module Flaky
             print "\e[32m.\e[0m"
           else
             failures += 1
-            failed_seeds << run_seed
+            failed_seeds.add(run_seed)
             print "\e[31mF\e[0m"
           end
         end
@@ -81,30 +81,24 @@ module Flaky
 
       private
 
-      def resolve_seeds
+      def resolve_seed
         case @seed
         when :random
           nil
         when Integer
-          [@seed]
+          @seed
         when nil
           file, line = parse_location(@spec_location)
           db_seeds = @repo.failing_seeds(file: file, line: line)
-          if db_seeds.any?
-            puts "Found #{db_seeds.length} known failing seed(s): #{db_seeds.join(', ')}"
-            db_seeds
-          else
-            puts "No known failing seeds — using random."
-            nil
-          end
+          db_seeds.any? ? db_seeds.first : nil
         end
       end
 
-      def seed_description(seeds)
+      def seed_description(seed)
         case @seed
         when :random then "random"
         when Integer then @seed.to_s
-        else seeds ? "#{seeds.length} from database" : "random"
+        else seed.present? ? seed.to_s : "random (no known failing seeds)"
         end
       end
 

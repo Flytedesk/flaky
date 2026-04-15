@@ -1,0 +1,37 @@
+version: 2
+updates:
+  - package-ecosystem: "bundler"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "fix"
+      include: "scope"
+    # Patch/minor updates are grouped into a single bulk PR and
+    # auto-merged by .github/workflows/dependabot-automerge.yml.
+    # Major updates fall outside the group and get an individual
+    # PR per gem so they can be reviewed one at a time.
+    groups:
+      bundler-non-major:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "fix"
+      include: "scope"
+    groups:
+      actions-non-major:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
