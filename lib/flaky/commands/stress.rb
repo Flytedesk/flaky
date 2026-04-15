@@ -18,13 +18,14 @@ module Flaky
         env = {}
         env["FLAKY_CI_SIMULATE"] = "1" if @ci_simulate
 
+        seeds = resolve_seeds
         passes = 0
         failures = 0
         failed_seeds = []
         start_time = Time.now
 
         puts "Stress testing: #{@spec_location}"
-        puts "  Iterations: #{@iterations}, Seed: #{@seed || 'random'}, CI simulation: #{@ci_simulate}"
+        puts "  Iterations: #{@iterations}, Seeds: #{seed_description(seeds)}, CI simulation: #{@ci_simulate}"
         puts ""
 
         @iterations.times do |i|
@@ -34,7 +35,7 @@ module Flaky
             break
           end
 
-          run_seed = @seed || rand(100_000)
+          run_seed = seeds ? seeds[i % seeds.length] : rand(100_000)
           cmd = "bundle exec rspec #{@spec_location} --seed #{run_seed} --format progress 2>&1"
 
           output = nil
@@ -68,13 +69,52 @@ module Flaky
         end
 
         @repo.insert_stress_run(
-          spec_location: @spec_location, seed: @seed, iterations: @iterations,
-          passes: passes, failures: failures, ci_simulation: @ci_simulate ? 1 : 0
+          spec_location: @spec_location, seed: @seed.is_a?(Integer) ? @seed : nil,
+          iterations: @iterations, passes: passes, failures: failures,
+          ci_simulation: @ci_simulate ? 1 : 0
         )
 
         exit(failures > 0 ? 1 : 0)
       ensure
         @repo.close
+      end
+
+      private
+
+      def resolve_seeds
+        case @seed
+        when :random
+          nil
+        when Integer
+          [@seed]
+        when nil
+          file, line = parse_location(@spec_location)
+          db_seeds = @repo.failing_seeds(file: file, line: line)
+          if db_seeds.any?
+            puts "Found #{db_seeds.length} known failing seed(s): #{db_seeds.join(', ')}"
+            db_seeds
+          else
+            puts "No known failing seeds — using random."
+            nil
+          end
+        end
+      end
+
+      def seed_description(seeds)
+        case @seed
+        when :random then "random"
+        when Integer then @seed.to_s
+        else seeds ? "#{seeds.length} from database" : "random"
+        end
+      end
+
+      def parse_location(loc)
+        if loc.include?(":")
+          parts = loc.rpartition(":")
+          [parts[0], parts[2].to_i]
+        else
+          [loc, nil]
+        end
       end
     end
   end

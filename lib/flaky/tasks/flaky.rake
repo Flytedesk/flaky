@@ -36,7 +36,7 @@ FLAKY_HELP = <<~HELP
     SINCE      Number of days to look back for rank               [default: 30]
     SPEC       Spec file location (path/to/spec.rb or path:line)
     N          Number of stress test iterations                   [default: 20]
-    SEED       RSpec seed for deterministic ordering
+    SEED       RSpec seed (omit=use known failing seeds, "random"=random)
     CI         Set to "true" to enable CI simulation (latency + reduced threads)
     TIMEOUT    Stress test timeout in seconds                     [default: 600]
 
@@ -78,10 +78,15 @@ namespace :flaky do
   task stress: :environment do
     require "flaky/commands/stress"
     spec = ENV["SPEC"] || abort("Usage: bin/rails flaky:stress SPEC=path/to/spec.rb:42")
+    seed = case ENV["SEED"]
+           when nil then nil
+           when "random" then :random
+           else ENV["SEED"].to_i
+           end
     Flaky::Commands::Stress.new(
       spec_location: spec,
       iterations: ENV.fetch("N", "20").to_i,
-      seed: ENV["SEED"]&.to_i,
+      seed: seed,
       ci_simulate: ENV["CI"] == "true",
       timeout: ENV.fetch("TIMEOUT", "600").to_i
     ).execute

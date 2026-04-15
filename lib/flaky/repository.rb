@@ -147,6 +147,23 @@ module Flaky
       connection.execute("SELECT * FROM stress_runs ORDER BY created_at DESC LIMIT ?", limit)
     end
 
+    # --- Seeds ---
+
+    def failing_seeds(file:, line: nil)
+      conditions = ["spec_file LIKE ?"]
+      params = ["%#{file}%"]
+
+      if line
+        conditions << "line_number = ?"
+        params << line
+      end
+
+      connection.execute(
+        "SELECT DISTINCT seed FROM test_failures WHERE #{conditions.join(' AND ')} ORDER BY failed_at DESC",
+        params
+      ).map { |row| row["seed"] }
+    end
+
     # --- Stress ---
 
     def insert_stress_run(spec_location:, seed:, iterations:, passes:, failures:, ci_simulation:)
