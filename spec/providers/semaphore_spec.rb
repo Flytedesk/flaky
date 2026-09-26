@@ -66,6 +66,21 @@ RSpec.describe Flaky::Providers::Semaphore do
     end
   end
 
+  describe "#fetch_jobs" do
+    it "reports a job Semaphore stopped as stopped, not failed" do
+      # given
+      responses["pipelines/ppl1"] = [ok("blocks" => [
+        { "name" => "Unit Tests", "jobs" => [{ "job_id" => "j1", "name" => "Unit 1/2", "result" => "STOPPED" }] }
+      ])]
+
+      # when
+      jobs = provider.fetch_jobs(pipeline_id: "ppl1")
+
+      # then
+      expect(jobs.map { |j| j[:result] }).to eq(["stopped"])
+    end
+  end
+
   describe "transient API errors" do
     before { allow(provider).to receive(:sleep) }
 

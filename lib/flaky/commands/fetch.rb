@@ -56,7 +56,8 @@ module Flaky
         $stdout.flush
 
         jobs = provider.fetch_jobs(pipeline_id: wf[:pipeline_id])
-        pipeline_result = jobs.any? { |j| j[:result] == "failed" } ? "failed" : "passed"
+        results = jobs.map { |j| j[:result] }
+        pipeline_result = %w[failed stopped].find { |r| results.include?(r) } || "passed"
 
         puts "#{jobs.length} test jobs (#{pipeline_result})"
 
@@ -102,6 +103,9 @@ module Flaky
           parsed.failures.length
         elsif job[:result] == "failed"
           puts "\e[31mfailed\e[0m (no RSpec failures in log)"
+          0
+        elsif job[:result] == "stopped"
+          puts "\e[33mstopped\e[0m"
           0
         else
           puts "\e[32mok\e[0m"

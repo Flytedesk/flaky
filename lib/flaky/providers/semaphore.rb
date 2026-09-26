@@ -65,7 +65,7 @@ module Flaky
               id: job["job_id"],
               name: job["name"],
               block_name: block_name,
-              result: job["result"]&.downcase == "passed" ? "passed" : "failed"
+              result: job["result"]&.downcase # passed, failed, stopped; nil while running
             }
           end
         end

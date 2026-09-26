@@ -73,4 +73,16 @@ RSpec.describe Flaky::Commands::Fetch do
     # then
     expect(provider).not_to have_received(:fetch_log)
   end
+
+  it "records a workflow Semaphore stopped as stopped" do
+    # given
+    jobs.each { |job| job[:result] = "stopped" }
+
+    # when
+    described_class.new.execute
+
+    # then
+    result = Flaky::Database.new(db_path).connection.get_first_value("SELECT result FROM ci_runs WHERE workflow_id = 'wf1'")
+    expect(result).to eq("stopped")
+  end
 end
