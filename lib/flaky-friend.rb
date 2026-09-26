@@ -1,5 +1,9 @@
 # frozen_string_literal: true
 
+module Flaky
+  class Error < StandardError; end
+end
+
 require_relative "flaky/version"
 require_relative "flaky/configuration"
 require_relative "flaky/age_parser"
@@ -8,8 +12,6 @@ require_relative "flaky/providers/github_actions"
 require_relative "flaky/railtie" if defined?(Rails::Railtie)
 
 module Flaky
-  class Error < StandardError; end
-
   class << self
     def configuration
       @configuration ||= Configuration.new

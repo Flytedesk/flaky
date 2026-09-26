@@ -10,6 +10,11 @@ require_relative "../age_parser"
 module Flaky
   module Providers
     class Semaphore < Base
+      MAX_ATTEMPTS = 3
+
+      # Semaphore intermittently answers 500/504; worth another try.
+      class TransientError < Error; end
+
       def fetch_workflows(age: "24h")
         cutoff = Time.now - AgeParser.to_seconds(age)
         project_id = resolve_project_id
@@ -86,15 +91,24 @@ module Flaky
         req = Net::HTTP::Get.new(uri)
         req["Authorization"] = "Token #{api_token}"
 
-        response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true) do |http|
-          http.request(req)
+        attempt = 1
+        begin
+          response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true) do |http|
+            http.request(req)
+          end
+
+          message = "Semaphore API error (#{response.code}): #{response.body[0..200]}"
+          raise TransientError, message if response.is_a?(Net::HTTPServerError)
+          raise Error, message unless response.is_a?(Net::HTTPSuccess)
+
+          JSON.parse(response.body)
+        rescue TransientError, Net::OpenTimeout, Net::ReadTimeout => e
+          raise Error, "#{e.message} (gave up after #{attempt} attempts)" if attempt >= MAX_ATTEMPTS
+
+          sleep(2**attempt)
+          attempt += 1
+          retry
         end
-
-        raise Error, "Semaphore API error (#{response.code}): #{response.body[0..200]}" unless response.is_a?(Net::HTTPSuccess)
-
-        JSON.parse(response.body)
-      rescue Net::OpenTimeout, Net::ReadTimeout => e
-        raise Error, "Semaphore API timeout: #{e.message}"
       rescue SocketError => e
         raise Error, "Cannot reach Semaphore API: #{e.message}"
       rescue Errno::ECONNREFUSED => e

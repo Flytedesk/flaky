@@ -54,4 +54,45 @@ RSpec.describe Flaky::Providers::Semaphore do
       expect(requested_paths).to include(a_string_matching(/plumber-workflows\?.*branch_name=main/))
     end
   end
+
+  describe "transient API errors" do
+    before { allow(provider).to receive(:sleep) }
+
+    it "retries a request that returned a server error" do
+      # given
+      responses["plumber-workflows"] = [response("500", '"Internal error"'), ok([])]
+
+      # when
+      workflows = provider.fetch_workflows(age: "24h")
+
+      # then
+      expect(workflows).to eq([])
+    end
+
+    it "retries a request that timed out" do
+      # given
+      calls = 0
+      allow(Net::HTTP).to receive(:start) do |&block|
+        calls += 1
+        raise Net::ReadTimeout if calls == 1
+
+        block.call(instance_double(Net::HTTP, request: ok([])))
+      end
+
+      # when
+      provider.send(:api_get, "plumber-workflows")
+
+      # then
+      expect(calls).to eq(2)
+    end
+
+    it "gives up after 3 attempts" do
+      # given
+      responses["plumber-workflows"] = [response("500", '"Internal error"')]
+
+      # when / then
+      expect { provider.fetch_workflows(age: "24h") }
+        .to raise_error(Flaky::Error, /\(500\).*gave up after 3 attempts/)
+    end
+  end
 end
