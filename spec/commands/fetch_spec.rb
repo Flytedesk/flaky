@@ -38,6 +38,7 @@ RSpec.describe Flaky::Commands::Fetch do
 
   it "leaves no trace of a workflow whose jobs could not all be fetched" do
     # given
+    jobs.each { |job| job[:result] = "failed" }
     allow(provider).to receive(:fetch_log).with(job_id: "job1").and_return("10 examples, 0 failures")
     allow(provider).to receive(:fetch_log).with(job_id: "job2").and_raise(Flaky::Error, "Semaphore API error (504)")
 
@@ -60,5 +61,16 @@ RSpec.describe Flaky::Commands::Fetch do
     # then
     result = Flaky::Database.new(db_path).connection.get_first_value("SELECT result FROM job_results WHERE job_id = 'job1'")
     expect(result).to eq("failed")
+  end
+
+  it "does not download logs of passed jobs" do
+    # given
+    allow(provider).to receive(:fetch_log)
+
+    # when
+    described_class.new.execute
+
+    # then
+    expect(provider).not_to have_received(:fetch_log)
   end
 end

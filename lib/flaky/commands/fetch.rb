@@ -78,7 +78,8 @@ module Flaky
         print "    [#{index + 1}/#{total}] #{job[:name]}... "
         $stdout.flush
 
-        log = provider.fetch_log(job_id: job[:id])
+        # Only failed jobs have failures to record; passed-job logs are large and slow to fetch.
+        log = job[:result] == "failed" ? provider.fetch_log(job_id: job[:id]) : ""
         parsed = @parser.parse(log)
 
         @repo.insert_job_result(
@@ -103,7 +104,7 @@ module Flaky
           puts "\e[31mfailed\e[0m (no RSpec failures in log)"
           0
         else
-          puts "\e[32mok\e[0m (#{parsed.example_count} examples)"
+          puts "\e[32mok\e[0m"
           0
         end
       end
