@@ -56,6 +56,7 @@ module Flaky
           tf.line_number,
           tf.description,
           COUNT(*) as failure_count,
+          COUNT(DISTINCT tf.branch) as branch_count,
           MAX(tf.failed_at) as last_failure,
           GROUP_CONCAT(DISTINCT tf.seed) as seeds,
           GROUP_CONCAT(DISTINCT cr.commit_sha) as commit_shas
@@ -65,7 +66,8 @@ module Flaky
           AND cr.created_at >= datetime('now', ?2)
         GROUP BY tf.spec_file, tf.line_number
         HAVING COUNT(*) >= ?3
-        ORDER BY failure_count DESC, last_failure DESC
+        -- A flake fails on unrelated branches; a branch's own regression fails only there.
+        ORDER BY branch_count DESC, failure_count DESC, last_failure DESC
       SQL
     end
 

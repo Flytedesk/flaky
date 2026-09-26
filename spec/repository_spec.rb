@@ -46,6 +46,20 @@ RSpec.describe Flaky::Repository do
       # then
       expect(rows.first["failure_count"]).to eq(1)
     end
+
+    it "ranks a spec failing across branches above one failing repeatedly on a single branch" do
+      # given
+      3.times { |i| record_failure(branch: "broken-branch", workflow_id: "wf-b#{i}", spec_file: "spec/regression_spec.rb") }
+      record_failure(branch: "main", workflow_id: "wf1", spec_file: "spec/flaky_spec.rb")
+      record_failure(branch: "feature-x", workflow_id: "wf2", spec_file: "spec/flaky_spec.rb")
+
+      # when
+      rows = repo.rank_failures(branch: :all, since_days: 30)
+
+      # then
+      expect(rows.map { |r| [r["spec_file"], r["branch_count"]] })
+        .to eq([["spec/flaky_spec.rb", 2], ["spec/regression_spec.rb", 1]])
+    end
   end
 
   describe "#run_stats" do
