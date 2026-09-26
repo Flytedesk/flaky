@@ -12,6 +12,10 @@ module Flaky
       @db.close
     end
 
+    def transaction(&)
+      connection.transaction(&)
+    end
+
     # --- CI Runs ---
 
     def workflow_fetched?(workflow_id)

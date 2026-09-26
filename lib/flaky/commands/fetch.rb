@@ -58,17 +58,17 @@ module Flaky
         jobs = provider.fetch_jobs(pipeline_id: wf[:pipeline_id])
         pipeline_result = jobs.any? { |j| j[:result] == "failed" } ? "failed" : "passed"
 
-        @repo.insert_ci_run(
-          workflow_id: wf[:id], pipeline_id: wf[:pipeline_id],
-          branch: wf[:branch], result: pipeline_result, created_at: wf[:created_at],
-          commit_sha: wf[:commit_sha]
-        )
-
         puts "#{jobs.length} test jobs (#{pipeline_result})"
 
-        failures = 0
-        jobs.each_with_index do |job, ji|
-          failures += process_job(provider, job, wf, ji, jobs.length)
+        # All or nothing: a workflow in ci_runs counts as fetched and is never revisited.
+        failures = @repo.transaction do
+          @repo.insert_ci_run(
+            workflow_id: wf[:id], pipeline_id: wf[:pipeline_id],
+            branch: wf[:branch], result: pipeline_result, created_at: wf[:created_at],
+            commit_sha: wf[:commit_sha]
+          )
+
+          jobs.each_with_index.sum { |job, ji| process_job(provider, job, wf, ji, jobs.length) }
         end
 
         [jobs.length, failures]
