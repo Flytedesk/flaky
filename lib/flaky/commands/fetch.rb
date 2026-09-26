@@ -83,7 +83,7 @@ module Flaky
 
         @repo.insert_job_result(
           job_id: job[:id], workflow_id: wf[:id], job_name: job[:name],
-          block_name: job[:block_name], result: parsed.failure_count.to_i > 0 ? "failed" : "passed",
+          block_name: job[:block_name], result: job[:result],
           example_count: parsed.example_count, failure_count: parsed.failure_count,
           seed: parsed.seed, duration_seconds: parsed.duration_seconds
         )
@@ -99,6 +99,9 @@ module Flaky
           end
           puts "\e[31m#{parsed.failures.length} failure(s)\e[0m"
           parsed.failures.length
+        elsif job[:result] == "failed"
+          puts "\e[31mfailed\e[0m (no RSpec failures in log)"
+          0
         else
           puts "\e[32mok\e[0m (#{parsed.example_count} examples)"
           0

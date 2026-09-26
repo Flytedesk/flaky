@@ -47,4 +47,18 @@ RSpec.describe Flaky::Commands::Fetch do
     # then
     expect(repository.workflow_fetched?("wf1")).to be(false)
   end
+
+  it "records a job that failed before RSpec ran as failed" do
+    # given
+    jobs.first[:result] = "failed"
+    allow(provider).to receive(:fetch_log).with(job_id: "job1").and_return("Error dialing ssh: connection timed out")
+    allow(provider).to receive(:fetch_log).with(job_id: "job2").and_return("10 examples, 0 failures")
+
+    # when
+    described_class.new.execute
+
+    # then
+    result = Flaky::Database.new(db_path).connection.get_first_value("SELECT result FROM job_results WHERE job_id = 'job1'")
+    expect(result).to eq("failed")
+  end
 end
