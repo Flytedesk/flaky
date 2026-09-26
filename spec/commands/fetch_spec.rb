@@ -85,4 +85,15 @@ RSpec.describe Flaky::Commands::Fetch do
     result = Flaky::Database.new(db_path).connection.get_first_value("SELECT result FROM ci_runs WHERE workflow_id = 'wf1'")
     expect(result).to eq("stopped")
   end
+
+  it "leaves a workflow that is still running for a later fetch" do
+    # given
+    jobs.first[:result] = nil
+
+    # when
+    described_class.new.execute
+
+    # then
+    expect(repository.workflow_fetched?("wf1")).to be(false)
+  end
 end

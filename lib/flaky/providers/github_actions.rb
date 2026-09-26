@@ -62,7 +62,7 @@ module Flaky
         case conclusion
         when "success" then "passed"
         when "failure" then "failed"
-        else conclusion || "unknown"
+        else conclusion # nil while in progress
         end
       end
     end

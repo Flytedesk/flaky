@@ -57,6 +57,12 @@ module Flaky
 
         jobs = provider.fetch_jobs(pipeline_id: wf[:pipeline_id])
         results = jobs.map { |j| j[:result] }
+
+        if results.include?(nil)
+          puts "still running, skipped"
+          return [0, 0]
+        end
+
         pipeline_result = %w[failed stopped].find { |r| results.include?(r) } || "passed"
 
         puts "#{jobs.length} test jobs (#{pipeline_result})"
