@@ -27,10 +27,12 @@ if defined?(Flaky)
   Flaky.configure do |c|
     c.provider = :semaphore        # or :github_actions
     c.project  = "my-project"      # CI project name
-    c.branch   = "main"            # branch to track
+    c.branch   = "main"            # branch to track, or :all for every branch
   end
 end
 ```
+
+`:all` gives a much larger sample: flakes on feature branches count too. `flaky:rank` then orders tests by how many distinct branches they failed on, so a test broken by one branch's work in progress (many failures, one branch) ranks below a test that fails on unrelated branches.
 
 ### Prerequisites by provider
 
@@ -52,11 +54,11 @@ bin/rails flaky:fetch DURATION=7d      # last 7 days
 bin/rails flaky:fetch DURATION=90d     # last 90 days
 ```
 
-`DURATION` accepts `m`, `h`, or `d` suffixes. For each workflow on the configured branch, fetches all test job logs, parses RSpec output for failures and random seeds, and inserts new records into `tmp/flaky.db`. Workflows already in the database are skipped. A workflow is stored together with all its jobs or not at all, so an interrupted fetch is picked up again by the next run.
+`DURATION` accepts `m`, `h`, or `d` suffixes. For each workflow on the configured branch, fetches the logs of failed test jobs, parses RSpec output for failures and random seeds, and inserts new records into `tmp/flaky.db`. Workflows already in the database are skipped. A workflow is stored together with all its jobs or not at all, so an interrupted fetch is picked up again by the next run.
 
 ### `bin/rails flaky:rank SINCE=30`
 
-Rank flaky tests by failure frequency and suggest the next one to investigate.
+Rank flaky tests by the number of branches they failed on, then by failure count, and suggest the next one to investigate.
 
 ```sh
 bin/rails flaky:rank              # last 30 days (default)
@@ -68,9 +70,9 @@ Output:
 ```
 Flaky tests on main (last 30 days, 42 CI runs):
 
-Fails  Location                                           Last Failure
-------------------------------------------------------------------------------------------
-5      ...spec/system/inventory_search_modal_spec.rb:83    2026-04-12 09:15:22
+Fails  Branches  Location
+----------------------------------------------------------------------------------------------------
+5      3         ...spec/system/inventory_search_modal_spec.rb:83  (2026-04-12 09:15:22)
 
   > Next to investigate: packs/.../inventory_search_modal_spec.rb:83
     Inventory search modal filters by enrollment
