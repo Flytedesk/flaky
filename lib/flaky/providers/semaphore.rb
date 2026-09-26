@@ -18,13 +18,11 @@ module Flaky
 
         page = 1
         loop do
-          data = api_get("plumber-workflows", project_id: project_id, page: page)
+          data = api_get("plumber-workflows", project_id: project_id, branch_name: branch, page: page)
           break if data.empty?
 
           data.each do |wf|
             created_at = Time.at(wf.dig("created_at", "seconds").to_i)
-            next unless wf["branch_name"] == branch
-
             if created_at < cutoff
               return workflows # older than cutoff, done
             end
@@ -80,7 +78,7 @@ module Flaky
       private
 
       def api_get(path, **params)
-        query = params.map { |k, v| "#{k}=#{v}" }.join("&")
+        query = URI.encode_www_form(params)
         url = "#{api_host}/api/v1alpha/#{path}"
         url += "?#{query}" unless query.empty?
 
