@@ -18,12 +18,12 @@ module Flaky
       def fetch_workflows(age: "24h")
         cutoff = Time.now - AgeParser.to_seconds(age)
         project_id = resolve_project_id
-        branch = config.branch
+        branch_filter = config.all_branches? ? {} : { branch_name: config.branch }
         workflows = []
 
         page = 1
         loop do
-          data = api_get("plumber-workflows", project_id: project_id, branch_name: branch, page: page)
+          data = api_get("plumber-workflows", project_id: project_id, **branch_filter, page: page)
           break if data.empty?
 
           data.each do |wf|

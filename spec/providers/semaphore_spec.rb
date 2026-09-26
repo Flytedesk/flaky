@@ -53,6 +53,17 @@ RSpec.describe Flaky::Providers::Semaphore do
       # then
       expect(requested_paths).to include(a_string_matching(/plumber-workflows\?.*branch_name=main/))
     end
+
+    it "asks Semaphore for every branch when configured with :all" do
+      # given
+      config.branch = :all
+
+      # when
+      provider.fetch_workflows(age: "24h")
+
+      # then
+      expect(requested_paths.grep(/plumber-workflows/)).to all(satisfy { |path| !path.include?("branch_name") })
+    end
   end
 
   describe "transient API errors" do
