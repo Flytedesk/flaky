@@ -12,7 +12,7 @@ lib/flaky/
   log_parser.rb             # RSpec output parser (CI-agnostic)
   providers/
     base.rb                 # Abstract provider interface (3 methods)
-    semaphore.rb            # Semaphore CI via `sem` CLI
+    semaphore.rb            # Semaphore CI via its REST API (token from ~/.sem.yaml)
     github_actions.rb       # GitHub Actions via `gh` CLI
   commands/
     fetch.rb                # Provider -> Parser -> DB pipeline
@@ -28,7 +28,15 @@ lib/flaky/
 
 ## Key Design Decisions
 
-- **Pluggable providers**: CI-specific code is isolated in `providers/`. The `Base` class defines the contract: `fetch_workflows`, `fetch_jobs`, `fetch_log`. Commands and the log parser never touch CI-specific code.
+- **Pluggable providers**: CI-specific code is isolated in `providers/`. The `Base` class defines the contract: `fetch_workflows`, `fetch_jobs`, `fetch_log`. Commands and the log parser never touch CI-specific code. A job's `result` comes from the provider, not the log, so jobs that die before RSpec runs are still recorded as failed.
+
+- **Semaphore API quirks**: `plumber-workflows` pages 30 at a time across all branches unless given `branch_name`, and intermittently answers 500; `/logs/{job}` 504s on large logs. `api_get` retries server errors and timeouts (`MAX_ATTEMPTS`).
+
+- **All branches**: `branch = :all` (`Configuration#all_branches?`) fetches every branch. `Repository` maps `:all` to SQL NULL and filters with `(?1 IS NULL OR branch = ?1)`, so those queries use numbered placeholders. `rank_failures` orders by distinct branch count first: flakes fail on unrelated branches, a branch's own regression only on that branch.
+
+- **Failed-job logs only**: `Fetch` downloads logs for failed jobs only; passed jobs are stored without counts or seeds.
+
+- **Atomic fetch**: `Fetch` stores a workflow and all its job results in one transaction. A row in `ci_runs` means "done" and is never revisited, so it must not exist without its jobs.
 
 - **CI-agnostic log parser**: `LogParser` operates on raw RSpec output from any provider. It handles Semaphore's ~80-char line wrapping by stripping newlines from the "Failed examples:" section before regex extraction.
 
@@ -74,16 +82,21 @@ Bump `SCHEMA_VERSION` in `database.rb` and add a new migration block in `migrate
 - Ruby >= 3.1
 
 External CLI tools (not gem dependencies):
-- `sem` -- for the Semaphore provider
+- `sem` -- only to create `~/.sem.yaml` (`sem connect`) for the Semaphore provider
 - `gh` -- for the GitHub Actions provider
 
 ## Testing
 
-No test suite yet. Verify manually:
+```sh
+bundle exec rspec
+```
+
+Specs cover the log parser, age parser, repository, Semaphore provider (`Net::HTTP` stubbed), and fetch/rank commands (temp SQLite db). CI runs them on Ruby 3.4 and 4.0.
+
+Smoke-test against real CI from the host Rails app:
 
 ```sh
-# From the host Rails app
-rake flaky:fetch[24h]
-rake flaky:rank
-rake flaky:report
+bin/rails flaky:fetch DURATION=24h
+bin/rails flaky:rank
+bin/rails flaky:report
 ```

@@ -1,0 +1,99 @@
+# frozen_string_literal: true
+
+require "spec_helper"
+require "tmpdir"
+require "stringio"
+require "flaky/commands/fetch"
+
+RSpec.describe Flaky::Commands::Fetch do
+  let(:db_path) { File.join(Dir.mktmpdir, "flaky.db") }
+  let(:provider) { instance_double(Flaky::Providers::Base) }
+  let(:workflow) do
+    { id: "wf1", pipeline_id: "ppl1", branch: "main", commit_sha: "abc", created_at: "2026-09-25 14:40:18" }
+  end
+  let(:jobs) do
+    [
+      { id: "job1", name: "Unit 1/2", block_name: "Unit Tests", result: "passed" },
+      { id: "job2", name: "Unit 2/2", block_name: "Unit Tests", result: "passed" }
+    ]
+  end
+
+  before do
+    config = Flaky::Configuration.new.tap { |c| c.db_path = db_path }
+    allow(Flaky).to receive_messages(configuration: config, provider: provider)
+    allow(provider).to receive_messages(fetch_workflows: [workflow], fetch_jobs: jobs)
+  end
+
+  around do |example|
+    original = $stdout
+    $stdout = StringIO.new
+    example.run
+  ensure
+    $stdout = original
+  end
+
+  def repository
+    Flaky::Repository.new(db_path)
+  end
+
+  it "leaves no trace of a workflow whose jobs could not all be fetched" do
+    # given
+    jobs.each { |job| job[:result] = "failed" }
+    allow(provider).to receive(:fetch_log).with(job_id: "job1").and_return("10 examples, 0 failures")
+    allow(provider).to receive(:fetch_log).with(job_id: "job2").and_raise(Flaky::Error, "Semaphore API error (504)")
+
+    # when
+    expect { described_class.new.execute }.to raise_error(Flaky::Error)
+
+    # then
+    expect(repository.workflow_fetched?("wf1")).to be(false)
+  end
+
+  it "records a job that failed before RSpec ran as failed" do
+    # given
+    jobs.first[:result] = "failed"
+    allow(provider).to receive(:fetch_log).with(job_id: "job1").and_return("Error dialing ssh: connection timed out")
+    allow(provider).to receive(:fetch_log).with(job_id: "job2").and_return("10 examples, 0 failures")
+
+    # when
+    described_class.new.execute
+
+    # then
+    result = Flaky::Database.new(db_path).connection.get_first_value("SELECT result FROM job_results WHERE job_id = 'job1'")
+    expect(result).to eq("failed")
+  end
+
+  it "does not download logs of passed jobs" do
+    # given
+    allow(provider).to receive(:fetch_log)
+
+    # when
+    described_class.new.execute
+
+    # then
+    expect(provider).not_to have_received(:fetch_log)
+  end
+
+  it "records a workflow Semaphore stopped as stopped" do
+    # given
+    jobs.each { |job| job[:result] = "stopped" }
+
+    # when
+    described_class.new.execute
+
+    # then
+    result = Flaky::Database.new(db_path).connection.get_first_value("SELECT result FROM ci_runs WHERE workflow_id = 'wf1'")
+    expect(result).to eq("stopped")
+  end
+
+  it "leaves a workflow that is still running for a later fetch" do
+    # given
+    jobs.first[:result] = nil
+
+    # when
+    described_class.new.execute
+
+    # then
+    expect(repository.workflow_fetched?("wf1")).to be(false)
+  end
+end
