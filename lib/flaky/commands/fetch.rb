@@ -56,19 +56,26 @@ module Flaky
         $stdout.flush
 
         jobs = provider.fetch_jobs(pipeline_id: wf[:pipeline_id])
-        pipeline_result = jobs.any? { |j| j[:result] == "failed" } ? "failed" : "passed"
+        results = jobs.map { |j| j[:result] }
 
-        @repo.insert_ci_run(
-          workflow_id: wf[:id], pipeline_id: wf[:pipeline_id],
-          branch: wf[:branch], result: pipeline_result, created_at: wf[:created_at],
-          commit_sha: wf[:commit_sha]
-        )
+        if results.include?(nil)
+          puts "still running, skipped"
+          return [0, 0]
+        end
+
+        pipeline_result = %w[failed stopped].find { |r| results.include?(r) } || "passed"
 
         puts "#{jobs.length} test jobs (#{pipeline_result})"
 
-        failures = 0
-        jobs.each_with_index do |job, ji|
-          failures += process_job(provider, job, wf, ji, jobs.length)
+        # All or nothing: a workflow in ci_runs counts as fetched and is never revisited.
+        failures = @repo.transaction do
+          @repo.insert_ci_run(
+            workflow_id: wf[:id], pipeline_id: wf[:pipeline_id],
+            branch: wf[:branch], result: pipeline_result, created_at: wf[:created_at],
+            commit_sha: wf[:commit_sha]
+          )
+
+          jobs.each_with_index.sum { |job, ji| process_job(provider, job, wf, ji, jobs.length) }
         end
 
         [jobs.length, failures]
@@ -78,12 +85,13 @@ module Flaky
         print "    [#{index + 1}/#{total}] #{job[:name]}... "
         $stdout.flush
 
-        log = provider.fetch_log(job_id: job[:id])
+        # Only failed jobs have failures to record; passed-job logs are large and slow to fetch.
+        log = job[:result] == "failed" ? provider.fetch_log(job_id: job[:id]) : ""
         parsed = @parser.parse(log)
 
         @repo.insert_job_result(
           job_id: job[:id], workflow_id: wf[:id], job_name: job[:name],
-          block_name: job[:block_name], result: parsed.failure_count.to_i > 0 ? "failed" : "passed",
+          block_name: job[:block_name], result: job[:result],
           example_count: parsed.example_count, failure_count: parsed.failure_count,
           seed: parsed.seed, duration_seconds: parsed.duration_seconds
         )
@@ -99,8 +107,14 @@ module Flaky
           end
           puts "\e[31m#{parsed.failures.length} failure(s)\e[0m"
           parsed.failures.length
+        elsif job[:result] == "failed"
+          puts "\e[31mfailed\e[0m (no RSpec failures in log)"
+          0
+        elsif job[:result] == "stopped"
+          puts "\e[33mstopped\e[0m"
+          0
         else
-          puts "\e[32mok\e[0m (#{parsed.example_count} examples)"
+          puts "\e[32mok\e[0m"
           0
         end
       end

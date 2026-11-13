@@ -10,7 +10,7 @@ Gem::Specification.new do |spec|
   spec.description = "Fetches CI test results, stores failures in SQLite, ranks by frequency, and reproduces under simulated CI conditions."
   spec.homepage = "https://github.com/Flytedesk/flaky"
   spec.license = "MIT"
-  spec.required_ruby_version = ">= 3.1"
+  spec.required_ruby_version = ">= 3.4"
 
   spec.files = Dir["lib/**/*", "LICENSE", "README.md"]
   spec.require_paths = ["lib"]

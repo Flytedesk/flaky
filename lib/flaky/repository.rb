@@ -12,6 +12,10 @@ module Flaky
       @db.close
     end
 
+    def transaction(&)
+      connection.transaction(&)
+    end
+
     # --- CI Runs ---
 
     def workflow_fetched?(workflow_id)
@@ -46,29 +50,31 @@ module Flaky
     # --- Ranking ---
 
     def rank_failures(branch:, since_days:, min_failures: 1)
-      connection.execute(<<~SQL, [branch, "-#{since_days} days", min_failures])
+      connection.execute(<<~SQL, [branch_param(branch), "-#{since_days} days", min_failures])
         SELECT
           tf.spec_file,
           tf.line_number,
           tf.description,
           COUNT(*) as failure_count,
+          COUNT(DISTINCT tf.branch) as branch_count,
           MAX(tf.failed_at) as last_failure,
           GROUP_CONCAT(DISTINCT tf.seed) as seeds,
           GROUP_CONCAT(DISTINCT cr.commit_sha) as commit_shas
         FROM test_failures tf
         JOIN ci_runs cr ON cr.workflow_id = tf.workflow_id
-        WHERE cr.branch = ?
-          AND cr.created_at >= datetime('now', ?)
+        WHERE (?1 IS NULL OR cr.branch = ?1)
+          AND cr.created_at >= datetime('now', ?2)
         GROUP BY tf.spec_file, tf.line_number
-        HAVING COUNT(*) >= ?
-        ORDER BY failure_count DESC, last_failure DESC
+        HAVING COUNT(*) >= ?3
+        -- A flake fails on unrelated branches; a branch's own regression fails only there.
+        ORDER BY branch_count DESC, failure_count DESC, last_failure DESC
       SQL
     end
 
     def total_runs_count(branch:, since_days:)
       connection.get_first_value(
-        "SELECT COUNT(DISTINCT workflow_id) FROM ci_runs WHERE branch = ? AND created_at >= datetime('now', ?)",
-        [branch, "-#{since_days} days"]
+        "SELECT COUNT(DISTINCT workflow_id) FROM ci_runs WHERE (?1 IS NULL OR branch = ?1) AND created_at >= datetime('now', ?2)",
+        [branch_param(branch), "-#{since_days} days"]
       ).to_i
     end
 
@@ -104,23 +110,25 @@ module Flaky
     # --- Report ---
 
     def run_stats(branch:)
+      branch = branch_param(branch)
       {
-        total_runs: connection.get_first_value("SELECT COUNT(*) FROM ci_runs WHERE branch = ?", branch).to_i,
-        failed_runs: connection.get_first_value("SELECT COUNT(*) FROM ci_runs WHERE branch = ? AND result = 'failed'", branch).to_i,
-        total_failures: connection.get_first_value("SELECT COUNT(*) FROM test_failures WHERE branch = ?", branch).to_i,
-        unique_specs: connection.get_first_value("SELECT COUNT(DISTINCT spec_file || ':' || line_number) FROM test_failures WHERE branch = ?", branch).to_i,
+        total_runs: connection.get_first_value("SELECT COUNT(*) FROM ci_runs WHERE (?1 IS NULL OR branch = ?1)", branch).to_i,
+        failed_runs: connection.get_first_value("SELECT COUNT(*) FROM ci_runs WHERE (?1 IS NULL OR branch = ?1) AND result = 'failed'", branch).to_i,
+        total_failures: connection.get_first_value("SELECT COUNT(*) FROM test_failures WHERE (?1 IS NULL OR branch = ?1)", branch).to_i,
+        unique_specs: connection.get_first_value("SELECT COUNT(DISTINCT spec_file || ':' || line_number) FROM test_failures WHERE (?1 IS NULL OR branch = ?1)", branch).to_i,
         last_fetch: connection.get_first_value("SELECT MAX(fetched_at) FROM ci_runs")
       }
     end
 
     def failure_trend(branch:, period_days: 7)
+      branch = branch_param(branch)
       recent = connection.get_first_value(
-        "SELECT COUNT(*) FROM test_failures WHERE branch = ? AND failed_at >= datetime('now', ?)",
+        "SELECT COUNT(*) FROM test_failures WHERE (?1 IS NULL OR branch = ?1) AND failed_at >= datetime('now', ?2)",
         [branch, "-#{period_days} days"]
       ).to_i
 
       prior = connection.get_first_value(
-        "SELECT COUNT(*) FROM test_failures WHERE branch = ? AND failed_at >= datetime('now', ?) AND failed_at < datetime('now', ?)",
+        "SELECT COUNT(*) FROM test_failures WHERE (?1 IS NULL OR branch = ?1) AND failed_at >= datetime('now', ?2) AND failed_at < datetime('now', ?3)",
         [branch, "-#{period_days * 2} days", "-#{period_days} days"]
       ).to_i
 
@@ -128,7 +136,7 @@ module Flaky
     end
 
     def top_flaky(branch:, limit: 5)
-      connection.execute(<<~SQL, [branch, limit])
+      connection.execute(<<~SQL, [branch_param(branch), limit])
         SELECT
           spec_file,
           line_number,
@@ -136,10 +144,10 @@ module Flaky
           COUNT(*) as failure_count,
           MAX(failed_at) as last_failure
         FROM test_failures
-        WHERE branch = ?
+        WHERE (?1 IS NULL OR branch = ?1)
         GROUP BY spec_file, line_number
         ORDER BY failure_count DESC
-        LIMIT ?
+        LIMIT ?2
       SQL
     end
 
@@ -174,6 +182,11 @@ module Flaky
     end
 
     private
+
+    # SQL NULL matches every branch; see Configuration#all_branches?.
+    def branch_param(branch)
+      branch == :all ? nil : branch
+    end
 
     def connection
       @db.connection

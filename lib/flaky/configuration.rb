@@ -14,6 +14,11 @@ module Flaky
       @test_blocks = ["Unit Tests", "System Tests"]
     end
 
+    # `branch = :all` tracks every branch instead of one.
+    def all_branches?
+      branch == :all
+    end
+
     def provider=(name)
       @provider_name = name.to_sym
     end

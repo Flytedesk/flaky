@@ -24,12 +24,12 @@ module Flaky
         total_runs = @repo.total_runs_count(branch: branch, since_days: @since_days)
 
         puts "Flaky tests on #{branch} (last #{@since_days} days, #{total_runs} CI runs):\n\n"
-        puts format("%-6s %s", "Fails", "Location")
-        puts "-" * 90
+        puts format("%-6s %-9s %s", "Fails", "Branches", "Location")
+        puts "-" * 100
 
         rows.each_with_index do |row, i|
           location = "#{row['spec_file']}:#{row['line_number']}"
-          puts format("%-6d %s  (%s)", row["failure_count"], location, row["last_failure"])
+          puts format("%-6d %-9d %s  (%s)", row["failure_count"], row["branch_count"], location, row["last_failure"])
 
           if i == 0
             puts "\n  \e[33m▶ Next to investigate:\e[0m #{location}"

@@ -10,21 +10,24 @@ require_relative "../age_parser"
 module Flaky
   module Providers
     class Semaphore < Base
+      MAX_ATTEMPTS = 3
+
+      # Semaphore intermittently answers 500/504; worth another try.
+      class TransientError < Error; end
+
       def fetch_workflows(age: "24h")
         cutoff = Time.now - AgeParser.to_seconds(age)
         project_id = resolve_project_id
-        branch = config.branch
+        branch_filter = config.all_branches? ? {} : { branch_name: config.branch }
         workflows = []
 
         page = 1
         loop do
-          data = api_get("plumber-workflows", project_id: project_id, page: page)
+          data = api_get("plumber-workflows", project_id: project_id, **branch_filter, page: page)
           break if data.empty?
 
           data.each do |wf|
             created_at = Time.at(wf.dig("created_at", "seconds").to_i)
-            next unless wf["branch_name"] == branch
-
             if created_at < cutoff
               return workflows # older than cutoff, done
             end
@@ -62,7 +65,7 @@ module Flaky
               id: job["job_id"],
               name: job["name"],
               block_name: block_name,
-              result: job["result"]&.downcase == "passed" ? "passed" : "failed"
+              result: job["result"]&.downcase # passed, failed, stopped; nil while running
             }
           end
         end
@@ -80,7 +83,7 @@ module Flaky
       private
 
       def api_get(path, **params)
-        query = params.map { |k, v| "#{k}=#{v}" }.join("&")
+        query = URI.encode_www_form(params)
         url = "#{api_host}/api/v1alpha/#{path}"
         url += "?#{query}" unless query.empty?
 
@@ -88,15 +91,24 @@ module Flaky
         req = Net::HTTP::Get.new(uri)
         req["Authorization"] = "Token #{api_token}"
 
-        response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true) do |http|
-          http.request(req)
+        attempt = 1
+        begin
+          response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true) do |http|
+            http.request(req)
+          end
+
+          message = "Semaphore API error (#{response.code}): #{response.body[0..200]}"
+          raise TransientError, message if response.is_a?(Net::HTTPServerError)
+          raise Error, message unless response.is_a?(Net::HTTPSuccess)
+
+          JSON.parse(response.body)
+        rescue TransientError, Net::OpenTimeout, Net::ReadTimeout => e
+          raise Error, "#{e.message} (gave up after #{attempt} attempts)" if attempt >= MAX_ATTEMPTS
+
+          sleep(2**attempt)
+          attempt += 1
+          retry
         end
-
-        raise Error, "Semaphore API error (#{response.code}): #{response.body[0..200]}" unless response.is_a?(Net::HTTPSuccess)
-
-        JSON.parse(response.body)
-      rescue Net::OpenTimeout, Net::ReadTimeout => e
-        raise Error, "Semaphore API timeout: #{e.message}"
       rescue SocketError => e
         raise Error, "Cannot reach Semaphore API: #{e.message}"
       rescue Errno::ECONNREFUSED => e
